@@ -3,7 +3,12 @@ import type { CropId } from "./crops";
 import { cropRootDepthM, getCrop } from "./crops";
 import { computeETc, mmToLiters } from "./et";
 import { EVIDENCE } from "./evidence";
-import { formatHabitTime, habitIrrigationMm, type HabitSettings } from "./habit";
+import {
+  formatHabitTime,
+  habitEffectiveMm,
+  habitIrrigationMm,
+  type HabitSettings,
+} from "./habit";
 import {
   appliedWaterMm,
   cropSaltLimit,
@@ -12,15 +17,10 @@ import {
 } from "./salinity";
 import {
   defaultSandyParams,
-  fieldCapacityMm,
   initialSoilState,
   stepSoilDay,
   type SoilState,
 } from "./soil";
-
-function fieldCapacityHint(cropId: CropId): number {
-  return fieldCapacityMm(defaultSandyParams(cropRootDepthM(cropId)));
-}
 import {
   et0Multiplier,
   irrigationEcForScenario,
@@ -67,7 +67,8 @@ export function decideForPlot(input: DecisionInput): DecisionResult {
   const et0 = weather.et0Mm * et0Multiplier(scenario);
   const etc = computeETc(et0, plot.cropId);
   const ecw = resolveWaterEc(plot, scenario, dayIndex);
-  const lr = leachingRequirementForCrop(ecw, plot.cropId);
+  // Safety buffer under crop ECe threshold so yield stays off the cliff
+  const lr = leachingRequirementForCrop(ecw, plot.cropId, 0.85);
   const mmNeeded = appliedWaterMm(etc, lr);
 
   const area =
@@ -75,18 +76,14 @@ export function decideForPlot(input: DecisionInput): DecisionResult {
       ? plot.areaM2
       : Math.max(1, plot.plantCount) * crop.canopyM2;
 
-  // Meet ETc + LR; bump leach only when root-zone salt is already near/over limit
-  let mm = mmNeeded;
   const threshold = cropSaltLimit(plot.cropId);
-  if (soil.rootZoneECe > threshold * 0.95) {
-    mm = appliedWaterMm(etc, Math.min(0.45, lr * 1.1));
-  } else if (
-    soil.rootZoneECe < threshold * 0.65 &&
-    soil.soilWaterMm >
-      fieldCapacityHint(plot.cropId) * 0.75
-  ) {
-    // Wet + low salt: slight trim but never below crop demand
-    mm = Math.max(etc, mmNeeded * 0.92);
+  const safetyECe = threshold * 0.85;
+  let mm = mmNeeded;
+  // If salt is already near/over the safety target, or well is getting saltier,
+  // push leaching harder — never trim in those cases.
+  if (soil.rootZoneECe > safetyECe || scenario === "brackish_rising") {
+    const boost = soil.rootZoneECe > threshold ? 1.2 : 1.12;
+    mm = appliedWaterMm(etc, Math.min(0.49, lr * boost));
   }
 
   const totalLiters = mmToLiters(mm, area);
@@ -103,14 +100,18 @@ export function decideForPlot(input: DecisionInput): DecisionResult {
   );
   const habitLiters = mmToLiters(habitMm, area);
 
-  // Project salt if habit continues one more dry/hot day with noon watering
   const params = defaultSandyParams(cropRootDepthM(plot.cropId));
+  const habitSoilMm = habitEffectiveMm(
+    plot.habit,
+    plot.cropId,
+    plot.plantCount,
+    area,
+  );
   const afterHabit = stepSoilDay(soil, params, {
-    irrigationMm: habitMm,
+    irrigationMm: habitSoilMm,
     irrigationEc: ecw,
     etcMm: etc,
   });
-  // Habit often under-leaches when ECw is high relative to fixed liters
   const afterPlan = stepSoilDay(soil, params, {
     irrigationMm: mm,
     irrigationEc: ecw,
@@ -133,14 +134,20 @@ export function decideForPlot(input: DecisionInput): DecisionResult {
       evidenceIds: ["fao56-etc-formula", crop.kcEvidenceId],
     },
     {
-      text: `Irrigation water EC ≈ ${ecw.toFixed(1)} dS/m → leaching share ${(lr * 100).toFixed(0)}% so salt stays near the crop limit (${threshold} dS/m).`,
+      text: `Irrigation water EC ≈ ${ecw.toFixed(1)} dS/m → leaching share ~${(lr * 100).toFixed(0)}% targeting ~${safetyECe.toFixed(1)} dS/m (under the ${threshold} dS/m crop limit).`,
       evidenceIds: ["fao29-lr-formula", crop.eceThresholdEvidenceId],
     },
     {
-      text: `Water early morning (${formatHour(start)}) to cut evaporation vs noon habit.`,
+      text: `Water early morning (${formatHour(start)}) so more of each liter reaches the roots vs noon habit loss.`,
       evidenceIds: ["best-time-start", "habit-noon-hour"],
     },
   ];
+  if (scenario === "brackish_rising") {
+    reasons.push({
+      text: "Well salinity is rising — leaching boosted to protect yield.",
+      evidenceIds: ["fao29-lr-formula"],
+    });
+  }
   if (plot.waterEcUnknown) {
     reasons.push({
       text: "Water EC unknown — using regional default (demo assumption).",
@@ -222,7 +229,13 @@ export function simulateCompare(
     });
     const etc = computeETc(weather.et0Mm * et0Multiplier(scenario), plot.cropId);
     const ecw = resolveWaterEc(plot, scenario, dayIndex);
-    const habitMm = habitIrrigationMm(
+    const habitGrossMm = habitIrrigationMm(
+      plot.habit,
+      plot.cropId,
+      plot.plantCount,
+      area,
+    );
+    const habitSoilMm = habitEffectiveMm(
       plot.habit,
       plot.cropId,
       plot.plantCount,
@@ -234,8 +247,9 @@ export function simulateCompare(
       irrigationEc: ecw,
       etcMm: etc,
     });
+    // Habit card still shows gross liters; soil only gets what survives noon evaporation
     habitSoil = stepSoilDay(habitSoil, params, {
-      irrigationMm: habitMm,
+      irrigationMm: habitSoilMm,
       irrigationEc: ecw,
       etcMm: etc,
     });
@@ -243,13 +257,13 @@ export function simulateCompare(
     return {
       date: weather.date,
       planWaterL: decision.totalLiters,
-      habitWaterL: mmToLiters(habitMm, area),
+      habitWaterL: mmToLiters(habitGrossMm, area),
       planECe: planSoil.rootZoneECe,
       habitECe: habitSoil.rootZoneECe,
       planYieldPct: expectedYieldPercent(planSoil.rootZoneECe, plot.cropId),
       habitYieldPct: expectedYieldPercent(habitSoil.rootZoneECe, plot.cropId),
       planMm: decision.mmPerPlot,
-      habitMm,
+      habitMm: habitGrossMm,
       ecw,
     };
   });

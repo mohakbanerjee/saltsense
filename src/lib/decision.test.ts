@@ -57,4 +57,20 @@ describe("30-day plan vs habit", () => {
     expect(late.planYieldPct).toBeGreaterThanOrEqual(late.habitYieldPct);
     expect(late.habitECe).toBeGreaterThan(2.5); // above tomato threshold
   });
+
+  it("demo tomato plot: plan yield beats overwatering habit under rising well salinity", () => {
+    // Matches seeded Plot B — Tomatoes (4 L habit, ECw 2.2, brackish_rising)
+    const plot = makeDemoPlot("plot-veg", "Plot B — Tomatoes", "tomato", 200);
+    plot.waterEc = 2.2;
+    const days = sampleDays(30);
+    const sensors = simulateSensorStream(
+      days.map((d) => d.date),
+      "brackish_rising",
+    );
+    const series = simulateCompare(plot, days, "brackish_rising", sensors, 2.5);
+    const last = series[series.length - 1]!;
+    expect(last.planYieldPct).toBeGreaterThanOrEqual(last.habitYieldPct);
+    expect(last.planECe).toBeLessThanOrEqual(2.5);
+    expect(last.planYieldPct).toBeGreaterThanOrEqual(90);
+  });
 });

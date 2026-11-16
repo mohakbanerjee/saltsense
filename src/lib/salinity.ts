@@ -21,8 +21,17 @@ export function leachingRequirement(ecw: number, eceTarget: number): number {
   return Math.min(Math.max(lr, 0), 0.5);
 }
 
-export function leachingRequirementForCrop(ecw: number, cropId: CropId): number {
-  return leachingRequirement(ecw, cropEceThreshold(cropId));
+/**
+ * LR for a crop. `safety` &lt; 1 targets a lower ECe than the yield threshold
+ * so the plan holds a buffer under the Maas–Hoffman cliff.
+ */
+export function leachingRequirementForCrop(
+  ecw: number,
+  cropId: CropId,
+  safety = 0.85,
+): number {
+  const target = cropEceThreshold(cropId) * safety;
+  return leachingRequirement(ecw, target);
 }
 
 /**

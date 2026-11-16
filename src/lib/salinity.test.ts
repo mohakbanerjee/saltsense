@@ -17,11 +17,17 @@ describe("leachingRequirement", () => {
     expect(leachingRequirement(10, 1.3)).toBe(0.5);
   });
 
-  it("date palm with 2.5 dS/m water", () => {
-    expect(leachingRequirementForCrop(2.5, "date_palm")).toBeCloseTo(
+  it("date palm with 2.5 dS/m water (raw threshold, safety=1)", () => {
+    expect(leachingRequirementForCrop(2.5, "date_palm", 1)).toBeCloseTo(
       2.5 / (5 * 4 - 2.5),
       5,
     );
+  });
+
+  it("applies safety buffer by default", () => {
+    const raw = leachingRequirementForCrop(2.5, "date_palm", 1);
+    const safe = leachingRequirementForCrop(2.5, "date_palm");
+    expect(safe).toBeGreaterThan(raw);
   });
 });
 

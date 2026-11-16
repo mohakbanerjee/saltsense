@@ -47,3 +47,26 @@ export function formatHabitTime(hour: number): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(h)}:${pad(m)}`;
 }
+
+/**
+ * Fraction of applied water that reaches the root zone.
+ * Noon habit loses more to evaporation than early-morning irrigation.
+ */
+export function irrigationDeliveryFactor(hour: number): number {
+  if (hour >= 10 && hour <= 15) return 0.68; // hot midday — desert evaporation
+  if (hour >= 8 && hour < 10) return 0.85;
+  return 0.95; // early morning / evening
+}
+
+/** Habit mm that actually enters the soil after evaporative loss. */
+export function habitEffectiveMm(
+  habit: HabitSettings,
+  cropId: CropId,
+  plantCount: number,
+  plotAreaM2: number,
+): number {
+  return (
+    habitIrrigationMm(habit, cropId, plantCount, plotAreaM2) *
+    irrigationDeliveryFactor(habit.hour)
+  );
+}

@@ -1,36 +1,65 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SaltSense
 
-## Getting Started
+Smart farming for desert soil — GDGoC BPDC Breaking Bytes (A-001).
 
-First, run the development server:
+**Working name:** SaltSense (team may rename).
+
+## What
+
+SaltSense computes the **minimum water** that both meets crop demand **and** flushes enough salt (leaching). Everyone else builds “when to water”; the hidden desert problem is **salt** in the root zone.
+
+## Who
+
+Small UAE farm owners / workers (date palms + vegetable plot). Basic phone, patchy signal, little time.
+
+## Why
+
+In sandy, salty desert soil, under-watering lets salt build up and kill yield; over-watering wastes scarce water. Growers guess. We show a decision and why it beats the usual habit.
+
+## Run
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Tests: `npm test` · Build: `npm run build` · Deploy: Vercel (no paid APIs required for core).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Optional AI leaf check: set `GEMINI_API_KEY` in `.env.local`. App works fully without it.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Real vs simulated data
 
-## Learn More
+| Data | Source | Label in UI |
+|------|--------|-------------|
+| Weather (temp, humidity, wind, radiation, ET0) | Open-Meteo (Dubai / Al Ain / Liwa) | real weather data (Open-Meteo) |
+| Crop coefficients Kc, ET math | FAO-56 | evidence table |
+| Salt thresholds, leaching formula | FAO-29 | evidence table |
+| Soil moisture / soil EC stream | Seeded simulator | simulated soil sensor data |
+| Water cost AED/m³, cheap sensor prices | Demo assumptions | demo assumption badge |
 
-To learn more about Next.js, take a look at the following resources:
+Offline: weather is fetched when online, cached, and a sample JSON is committed under `src/data/`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Architecture
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+src/
+  app/           # App Router screens (Today, Plots, Why, Compare, Cost, About, Demo, Leaf)
+  components/    # UI (decision card, nav, charts wrappers)
+  lib/           # Agronomy brain: weather, et, salinity, soil, decision, habit, evidence
+  data/          # Cached Open-Meteo sample + demo farm
+  store/         # Zustand + localStorage / IndexedDB persistence
+  i18n/          # EN / AR strings for decision card
+  sw/            # Service worker (PWA, offline)
+```
 
-## Deploy on Vercel
+Team hooks: `src/lib/crops.ts`, `src/lib/evidence.ts`, `src/lib/flags.ts`, `TEAM_IDEAS.md`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Design
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Earthy desert palette (sand, date brown, deep green, water blue). High contrast, big touch targets, sunlight-readable, icons + text.
+
+## Docs
+
+- `TODO_TEAM.md` — blockers and leftovers
+- `TEAM_IDEAS.md` — Mohak / Saachi inputs
+- `AI_USAGE.md` — Cursor-generated code; idea/decisions by the team
